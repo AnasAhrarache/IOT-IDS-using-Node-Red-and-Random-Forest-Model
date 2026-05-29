@@ -1,0 +1,187 @@
+[
+    {
+        "id": "44004a125448cff8",
+        "type": "tab",
+        "label": "IOT IDS",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "97bba7d4587bdbf5",
+        "type": "mqtt in",
+        "z": "44004a125448cff8",
+        "name": "",
+        "topic": "iot/devices/#",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "c5d65e4ba379accd",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 90,
+        "y": 60,
+        "wires": [
+            [
+                "3e1c3a37bf81e311"
+            ]
+        ]
+    },
+    {
+        "id": "3e1c3a37bf81e311",
+        "type": "json",
+        "z": "44004a125448cff8",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 190,
+        "y": 140,
+        "wires": [
+            [
+                "70b6bb4e7be38281"
+            ]
+        ]
+    },
+    {
+        "id": "70b6bb4e7be38281",
+        "type": "function",
+        "z": "44004a125448cff8",
+        "name": "Feature Extractor",
+        "func": "// ─────────────────────────────────────────\n// Window-based feature extraction\n// Match exactly how training data was collected\n// Window size: 30 seconds\n// ─────────────────────────────────────────\n\nvar WINDOW_SIZE = 30;  // seconds\n\n// Get device identity\nvar deviceId = msg.payload.device_id;\nif (!deviceId) return null;\n\n// Get or initialize device window\nvar window = context.get(deviceId) || {\n    messages   : [],\n    windowStart: Date.now()\n};\n\n// Add current message to window\nwindow.messages.push({\n    timestamp    : Date.now() / 1000,  // seconds\n    temperature  : msg.payload.temperature,\n    humidity     : msg.payload.humidity,\n    payload_size : msg.payload.payload_size,\n    topic_depth  : msg.topic.split(\"/\").length\n});\n\n// Check if window is complete\nvar windowAge = (Date.now() - window.windowStart) / 1000;\n\nif (windowAge < WINDOW_SIZE) {\n    // Window not complete yet — save and wait\n    context.set(deviceId, window);\n    return null;  // don't send anything to Flask yet\n}\n\n// ─────────────────────────────────────────\n// Window complete — compute features\n// ─────────────────────────────────────────\nvar messages = window.messages;\nvar n        = messages.length;\n\nif (n < 2) {\n    // Not enough messages — reset and wait\n    context.set(deviceId, {\n        messages   : [],\n        windowStart: Date.now()\n    });\n    return null;\n}\n\n// msg_count\nvar msg_count = n;\n\n// mean_interval and std_interval\nvar timestamps = messages.map(function(m) { return m.timestamp; });\nvar intervals  = [];\nfor (var i = 1; i < timestamps.length; i++) {\n    intervals.push(timestamps[i] - timestamps[i-1]);\n}\nvar mean_interval = intervals.reduce(function(a,b){ return a+b; }, 0) / intervals.length;\nvar variance      = intervals.reduce(function(a,b){ \n    return a + Math.pow(b - mean_interval, 2); \n}, 0) / intervals.length;\nvar std_interval  = Math.sqrt(variance);\n\n// mean_payload_size\nvar sizes            = messages.map(function(m){ return m.payload_size; });\nvar mean_payload_size = sizes.reduce(function(a,b){ return a+b; }, 0) / n;\n\n// mean_temp and std_temp\nvar temps     = messages.map(function(m){ return m.temperature; });\nvar mean_temp = temps.reduce(function(a,b){ return a+b; }, 0) / n;\nvar temp_var  = temps.reduce(function(a,b){ \n    return a + Math.pow(b - mean_temp, 2); \n}, 0) / n;\nvar std_temp  = Math.sqrt(temp_var);\n\n// mean_humidity and std_humidity\nvar hums          = messages.map(function(m){ return m.humidity; });\nvar mean_humidity = hums.reduce(function(a,b){ return a+b; }, 0) / n;\nvar hum_var       = hums.reduce(function(a,b){ \n    return a + Math.pow(b - mean_humidity, 2); \n}, 0) / n;\nvar std_humidity  = Math.sqrt(hum_var);\n\n// out_of_range_ratio\nvar out_of_range = messages.filter(function(m){\n    return m.temperature < 10 || m.temperature > 40 ||\n           m.humidity < 20    || m.humidity > 95;\n}).length;\nvar out_of_range_ratio = out_of_range / n;\n\n// topic_depth\nvar topic_depth = messages[0].topic_depth;\n\n// ─────────────────────────────────────────\n// Build feature object for Flask\n// ─────────────────────────────────────────\nvar features = {\n    device_id           : deviceId,\n    msg_count           : msg_count,\n    mean_interval       : Math.round(mean_interval   * 10000) / 10000,\n    std_interval        : Math.round(std_interval    * 10000) / 10000,\n    mean_payload_size   : Math.round(mean_payload_size * 100) / 100,\n    mean_temp           : Math.round(mean_temp       * 100)   / 100,\n    std_temp            : Math.round(std_temp        * 10000) / 10000,\n    mean_humidity       : Math.round(mean_humidity   * 100)   / 100,\n    std_humidity        : Math.round(std_humidity    * 10000) / 10000,\n    out_of_range_ratio  : Math.round(out_of_range_ratio * 10000) / 10000,\n    topic_depth         : topic_depth\n};\n\n// Save original payload for storage later\nmsg.originalPayload = msg.payload;\nmsg.deviceId        = deviceId;\nmsg.features        = features;\nmsg.payload         = features;\n\n// Reset window for next 30-second period\ncontext.set(deviceId, {\n    messages   : [],\n    windowStart: Date.now()\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 330,
+        "y": 220,
+        "wires": [
+            [
+                "fb31cb266d27a3d4"
+            ]
+        ]
+    },
+    {
+        "id": "fb31cb266d27a3d4",
+        "type": "http request",
+        "z": "44004a125448cff8",
+        "name": "Flask AI API",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://localhost:5000/predict",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 450,
+        "y": 300,
+        "wires": [
+            [
+                "4af5582409a68113"
+            ]
+        ]
+    },
+    {
+        "id": "4af5582409a68113",
+        "type": "switch",
+        "z": "44004a125448cff8",
+        "name": "Is Attack?",
+        "property": "payload.prediction",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "attack",
+                "vt": "str"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 280,
+        "y": 400,
+        "wires": [
+            [
+                "4a3f7a9555cf0d47"
+            ],
+            [
+                "6b49d56015767dae"
+            ]
+        ]
+    },
+    {
+        "id": "4a3f7a9555cf0d47",
+        "type": "debug",
+        "z": "44004a125448cff8",
+        "name": "ALERT",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 380,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "6b49d56015767dae",
+        "type": "debug",
+        "z": "44004a125448cff8",
+        "name": "NORMAL",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 380,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "c5d65e4ba379accd",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "localhost",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]
