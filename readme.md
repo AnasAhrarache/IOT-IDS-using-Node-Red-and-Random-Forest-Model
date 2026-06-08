@@ -263,5 +263,5 @@ Top features by importance: `mean_payload_size` (19.8%), `mean_interval` (19.3%)
 | Mohamed Ait Ezzaouite | FST Tanger — Université Abdelmalek Essaâdi |
 | Nadir Mounim | FST Tanger — Université Abdelmalek Essaâdi |
 
-**Module:** Internet of Things (IoT) — Pr. M. EL BRAK
+**Module:** Internet of Things (IoT) — Pr. M. EL BRAK.
 **Academic year:** 2025/2026
